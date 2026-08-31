@@ -98,6 +98,7 @@ function App() {
   const [runningAgent, setRunningAgent] = useState(false)
 
   const chatEndRef = useRef(null)
+  const runningAgentRef = useRef(false)
 
   // ==================================================
   // GENERAL
@@ -797,6 +798,13 @@ function App() {
 
       const data = await response.json()
 
+      // A conversation-history request may have started just before
+      // streaming began. Do not let that stale request overwrite the
+      // temporary user/assistant messages being updated by the stream.
+      if (runningAgentRef.current) {
+        return
+      }
+
       setMessages(data)
 
       setTimeout(() => {
@@ -873,6 +881,11 @@ function App() {
   // ==================================================
 
   useEffect(() => {
+    // Never replace the live temporary messages while a stream is active.
+    if (runningAgent) {
+      return
+    }
+
     if (!selectedConversation) {
       setMessages([])
       return
@@ -883,7 +896,10 @@ function App() {
     loadMessages(
       selectedConversation.id
     )
-  }, [selectedConversation?.id])
+  }, [
+    selectedConversation?.id,
+    runningAgent,
+  ])
 
   // ==================================================
   // SELECT AGENT
@@ -1384,8 +1400,13 @@ function App() {
   // ==================================================
 
   const createConversation = async (
-    title = 'New Conversation'
+    title = 'New Conversation',
+    options = {}
   ) => {
+    const {
+      selectConversation = true,
+    } = options
+
     if (!selectedAgent) {
       return null
     }
@@ -1432,11 +1453,13 @@ function App() {
         ...prev,
       ])
 
-      setSelectedConversation(
-        conversation
-      )
+      if (selectConversation) {
+        setSelectedConversation(
+          conversation
+        )
 
-      setMessages([])
+        setMessages([])
+      }
 
       return conversation
     } catch (err) {
@@ -1702,6 +1725,7 @@ function App() {
       `temp-assistant-${timestamp}`
 
     try {
+      runningAgentRef.current = true
       setRunningAgent(true)
       setError('')
 
@@ -1712,7 +1736,10 @@ function App() {
       if (!conversation) {
         conversation =
           await createConversation(
-            'New Conversation'
+            'New Conversation',
+            {
+              selectConversation: false,
+            }
           )
 
         if (!conversation) {
@@ -1941,6 +1968,7 @@ function App() {
 
       checkProviderStatus()
     } finally {
+      runningAgentRef.current = false
       setRunningAgent(false)
     }
   }
