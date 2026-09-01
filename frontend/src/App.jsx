@@ -105,6 +105,7 @@ function App() {
   // ==================================================
 
   const [error, setError] = useState('')
+  const [backendWaking, setBackendWaking] = useState(false)
 
   // ==================================================
   // PROVIDER HELPERS
@@ -149,6 +150,87 @@ function App() {
     }
   }, [messages, runningAgent, loadingMessages])
 
+  const sleep = ms =>
+    new Promise(resolve =>
+      setTimeout(resolve, ms)
+    )
+
+  const fetchWithRetry = async (
+    url,
+    options = {},
+    retryOptions = {}
+  ) => {
+    const {
+      attempts = 6,
+      delayMs = 5000,
+      wakeMessage = true,
+    } = retryOptions
+
+    let lastError = null
+
+    for (
+      let attempt = 1;
+      attempt <= attempts;
+      attempt += 1
+    ) {
+      try {
+        const response = await fetch(
+          url,
+          options
+        )
+
+        if (response.ok) {
+          if (wakeMessage) {
+            setBackendWaking(false)
+          }
+
+          return response
+        }
+
+        // Retry only likely transient backend failures.
+        if (
+          response.status < 500 ||
+          attempt === attempts
+        ) {
+          if (wakeMessage) {
+            setBackendWaking(false)
+          }
+
+          return response
+        }
+
+        lastError = new Error(
+          `Backend returned ${response.status}`
+        )
+      } catch (err) {
+        lastError = err
+      }
+
+      if (
+        wakeMessage &&
+        attempt < attempts
+      ) {
+        setBackendWaking(true)
+        setError('')
+      }
+
+      if (attempt < attempts) {
+        await sleep(delayMs)
+      }
+    }
+
+    if (wakeMessage) {
+      setBackendWaking(false)
+    }
+
+    throw (
+      lastError ||
+      new Error(
+        'Unable to reach backend.'
+      )
+    )
+  }
+
   // ==================================================
   // LOAD PROVIDERS
   // ==================================================
@@ -157,8 +239,13 @@ function App() {
     try {
       setLoadingProviders(true)
 
-      const response = await fetch(
-        `${API_BASE_URL}/providers`
+      const response = await fetchWithRetry(
+        `${API_BASE_URL}/providers`,
+        {},
+        {
+          attempts: 6,
+          delayMs: 5000,
+        }
       )
 
       if (!response.ok) {
@@ -200,8 +287,14 @@ function App() {
     try {
       setCheckingProviders(true)
 
-      const response = await fetch(
-        `${API_BASE_URL}/health`
+      const response = await fetchWithRetry(
+        `${API_BASE_URL}/health`,
+        {},
+        {
+          attempts: 3,
+          delayMs: 3000,
+          wakeMessage: false,
+        }
       )
 
       if (!response.ok) {
@@ -243,8 +336,13 @@ function App() {
     try {
       setLoadingAgents(true)
 
-      const response = await fetch(
-        `${API_BASE_URL}/agents`
+      const response = await fetchWithRetry(
+        `${API_BASE_URL}/agents`,
+        {},
+        {
+          attempts: 6,
+          delayMs: 5000,
+        }
       )
 
       if (!response.ok) {
@@ -331,8 +429,13 @@ function App() {
     try {
       setLoadingKnowledgeBases(true)
 
-      const response = await fetch(
-        `${API_BASE_URL}/knowledge-bases`
+      const response = await fetchWithRetry(
+        `${API_BASE_URL}/knowledge-bases`,
+        {},
+        {
+          attempts: 6,
+          delayMs: 5000,
+        }
       )
 
       if (!response.ok) {
@@ -2395,7 +2498,20 @@ function App() {
 
         <main className="workspace">
 
-          {error && (
+          {backendWaking && (
+            <div
+              className="error-message"
+              style={{
+                background: '#fff8e6',
+                borderColor: '#f5d58a',
+                color: '#7a5a00',
+              }}
+            >
+              Backend is waking up from the free hosting tier. This can take up to about a minute. Retrying automatically...
+            </div>
+          )}
+
+          {!backendWaking && error && (
             <div className="error-message">
               {error}
             </div>
