@@ -19,7 +19,19 @@ if not DATABASE_URL:
 
 
 engine = create_engine(
-    DATABASE_URL
+    DATABASE_URL,
+
+    # Check pooled connections before handing
+    # them to the application. This prevents
+    # stale PostgreSQL/Neon connections from
+    # causing "SSL connection has been closed
+    # unexpectedly" errors.
+    pool_pre_ping=True,
+
+    # Periodically replace older connections
+    # instead of keeping them in the pool
+    # indefinitely.
+    pool_recycle=300,
 )
 
 
